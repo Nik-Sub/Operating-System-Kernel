@@ -60,6 +60,7 @@ uint8 MyBuffer::get() {
 }
 
 int MyBuffer::getCnt() {
+    //__asm__ volatile ("mv a0, %[var]": : [var]"r" (this));
     int ret;
 
     sem_wait(mutexHead);
@@ -75,4 +76,14 @@ int MyBuffer::getCnt() {
     sem_signal(mutexHead);
 
     return ret;
+}
+
+void *MyBuffer::operator new(size_t s) {
+    return SlabAllocator::getInstance()->alloc("CacheBuffersConsole", s);
+}
+
+void MyBuffer::operator delete(void *p) {
+    if (p == nullptr)
+        return;
+    slabMemFree("CacheBuffersConsole", p);
 }

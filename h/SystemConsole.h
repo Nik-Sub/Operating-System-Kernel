@@ -8,6 +8,8 @@
 
 
 class SystemConsole {
+private:
+    static SystemConsole* console;
 public:
     SystemConsole(){
         // i had problem with initializing static fields, so i did this
@@ -23,17 +25,34 @@ public:
     static MyBuffer* inputBuffer;
     static MyBuffer* outputBuffer;
 
+    static SystemConsole* getInstance(){
+        if (console == nullptr)
+            console = new SystemConsole();
+        return console;
+    }
+
     static void funForOutputThread(void* p){
+
+        uint64 mask = 0x01;
+        __asm__ volatile("csrc sstatus, %[par]": : [par]"r" (mask));
         while (true) {
             // if buffer is empty, then wait
-            sem_wait(outputSem);
-            sem_wait(extIntSemForOutput);
-            while (*((uint8 *) CONSOLE_STATUS) & (1 << 5)) {
-                uint8 *tranReg = (uint8 *) CONSOLE_TX_DATA;
-                uint8 forPrint = SystemConsole::outputBuffer->get();
+            //sem_wait(outputSem);
+            //sem_wait(extIntSemForOutput);
 
-                *tranReg = forPrint;
+
+            if (outputBuffer->getCnt() != 0 || *((uint8 *) CONSOLE_STATUS) & (1 << 5)) {
+                while (*((uint8 *) CONSOLE_STATUS) & (1 << 5)) {
+                    if (outputBuffer->getCnt() == 0 || !(*((uint8 *) CONSOLE_STATUS) & (1 << 5)))
+                        break;
+                    uint8 *tranReg = (uint8 *) CONSOLE_TX_DATA;
+                    uint8 forPrint = outputBuffer->get();
+
+                    *tranReg = forPrint;
+                }
             }
+            thread_dispatch();
+
         }
     }
 

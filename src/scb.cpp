@@ -1,17 +1,25 @@
 //
 // Created by os on 8/12/22.
 #include "../h/scb.hpp"
+#include "../h/printing.hpp"
+
+int SCB::pomId = 0;
+
+
+
 TCB::Context* SCB::saveContext(TCB::Context* context) {
     //parametar is in a1, not in a0!!!!!!!!!
     //__asm__ volatile ("mv a0, %[par]": : [par]"r" (context));;
     // saving context of running thread
     __asm__ volatile ("sd ra, 0x00(a1)");
     __asm__ volatile ("sd sp, 0x08(a1)");
+    __asm__ volatile ("sd ra, 0x10(a0)");
+    __asm__ volatile ("sd ra, 0x18(a0)");
     // val is 0 because we want to enter if from blocked()
     // because we need to switch context
     unsigned val = 0;
     __asm__ volatile ("mv t1, %[par]": : [par]"r" (val));
-    __asm__ volatile ("sd t1, 0x10(a1)");
+    __asm__ volatile ("sd t1, 0x20(a1)");
     return context;
 
 }
@@ -20,9 +28,11 @@ void SCB::block() {
     saveContext(&(TCB::running->context));
     int val = getValForJump();
     if ( val == 0){
+        //printf("Blokirana nit", brojac);
         putThreadInBlocked();
         TCB::running = Scheduler::get();
         changeContext();
+        //printf("Odblokirana nit", brojac);
     }
 }
 
@@ -34,7 +44,8 @@ void SCB::deblock() {
 }
 
 SCB *SCB::createSemaphore(unsigned val) {
-    return new SCB(val);
+    SCB* s = new SCB(val);
+    return s;
 }
 
 int SCB::semClose(SCB *sem) {
@@ -72,11 +83,24 @@ void SCB::changeContext() {
     }
     else{
      */
+
+
         // function popSppSpie will do the rest
-        __asm__ volatile ("mv ra, %[par]": : [par] "r" (TCB::running->context.ra));
+        __asm__ volatile ("mv ra, %[par]": : [par] "r" (TCB::running->context.raCopy2));
+    __asm__ volatile ("mv ra, %[par]": : [par] "r" (TCB::running->context.raCopy));
         __asm__ volatile ("mv sp, %[par]": : [par] "r" (TCB::running->context.sp));
 
     //}
+}
+
+void *SCB::operator new(size_t s) {
+    return SlabAllocator::getInstance()->alloc("CacheBuffersConsole", s);
+}
+
+void SCB::operator delete(void *p) {
+    if (p == nullptr)
+        return;
+    slabMemFree("CacheBuffersConsole", p);
 }
 
 //

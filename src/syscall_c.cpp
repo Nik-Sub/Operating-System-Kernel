@@ -1,5 +1,6 @@
 #include "../h/syscall_c.h"
-//#include "../test/printing.hpp"
+#include "../h/printing.hpp"
+#include "../h/syscall_cpp.h"
 
 
 //extern "C" void* mem_allocS(size_t sizeInBlocks);
@@ -20,9 +21,11 @@ int mem_free (void* mem){
     void* retVal = Riscv::forEveryFunc(0x02, mem);
     //__putc('O');
     if (retVal != nullptr){
+        __asm__ volatile ("mv a0, %[var]": : [var]"r" (0));
         return 0;
     }
     else{
+        __asm__ volatile ("mv a0, %[var]": : [var]"r" (-1));
         return -1;
     }
 }
@@ -31,25 +34,42 @@ int mem_free (void* mem){
 int thread_create (
         thread_t* handle,
         void(*start_routine)(void*),
-        void* arg
+        void* arg,
+        uint64* stek
+
 ){
 
 
     // push arg on stack beacuse we need code of func in a0
-    __asm__ volatile ("addi sp, sp, -24");
+    __asm__ volatile ("addi sp, sp, -32");
     __asm__ volatile ("sd a0, 0x00(sp)");
     __asm__ volatile ("sd a1, 0x08(sp)");
     __asm__ volatile ("sd a2, 0x10(sp)");
+    __asm__ volatile ("sd a3, 0x18(sp)");
 
     // postavljanje parametara
     // we are passing last location of stack
-    __asm__ volatile ("mv a4, %[param]": :[param] "r" ((uint64*) mem_alloc(DEFAULT_STACK_SIZE * sizeof(uint64)) + DEFAULT_STACK_SIZE));
+
+    //void* stek = (uint64 *) mem_alloc(DEFAULT_STACK_SIZE * sizeof(uint64));
+    //void* stek = slabMemAlloc("CacheThreadStacks");
+    //uint64 * stek;
+    //__asm__ volatile ("mv %[var], a3": [var]"=r" (stek));
+    if (stek != nullptr){
+        stek = (uint64 *) stek + DEFAULT_STACK_SIZE;
+    }
+    else{
+        //printString("Nema memorije!");
+        *handle = nullptr;
+        __asm__ volatile ("addi sp, sp, 32");
+        return -1;
+    }
+    __asm__ volatile ("mv a4, %[param]": :[param] "r" (stek));
     __asm__ volatile ("mv a0, %[code]": :[code] "r" (0x11));
     __asm__ volatile ("ld a1, 0x00(sp)");
     __asm__ volatile ("ld a2, 0x08(sp)");
     __asm__ volatile ("ld a3, 0x10(sp)");
 
-    __asm__ volatile ("addi sp, sp, 24");
+    __asm__ volatile ("addi sp, sp, 32");
     //uint64* stack = new uint64(DEFAULT_STACK_SIZE);
 
 
@@ -160,4 +180,42 @@ char getc (){
     __asm__ volatile ("mv %[par], a0": [par]"=r"(retVal));
 
     return *retVal;
+}
+
+void* slabMemAlloc(char const* name, size_t sizeOfData){
+    // push arg on stack beacuse we need code of func in a0
+    __asm__ volatile ("addi sp, sp, -16");
+    __asm__ volatile ("sd a0, 0x00(sp)");
+    __asm__ volatile ("sd a1, 0x08(sp)");
+
+    // put args in registers
+    __asm__ volatile ("mv a0, %[code]": :[code] "r" (0x50));
+    __asm__ volatile ("ld a1, 0x00(sp)");
+    __asm__ volatile ("ld a2, 0x08(sp)");
+
+    // pop args from stack
+    __asm__ volatile ("addi sp, sp, 16");
+
+    __asm__ volatile ("ecall");
+    void* addr;
+    __asm__ volatile ("mv %[var], a0": [var]"=r" (addr));
+    //__putc('I');
+    return addr;
+}
+
+void slabMemFree(char const* name, void* addr){
+    // push arg on stack beacuse we need code of func in a0
+    __asm__ volatile ("addi sp, sp, -16");
+    __asm__ volatile ("sd a0, 0x00(sp)");
+    __asm__ volatile ("sd a1, 0x08(sp)");
+
+    // put args in registers
+    __asm__ volatile ("mv a0, %[code]": :[code] "r" (0x51));
+    __asm__ volatile ("ld a1, 0x00(sp)");
+    __asm__ volatile ("ld a2, 0x08(sp)");
+
+    // pop args from stack
+    __asm__ volatile ("addi sp, sp, 16");
+
+    __asm__ volatile ("ecall");
 }

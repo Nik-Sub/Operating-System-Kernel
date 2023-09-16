@@ -17,7 +17,8 @@ int mem_free (void* mem);
 int thread_create (
         thread_t* handle,
         void(*start_routine)(void*),
-        void* arg
+        void* arg,
+        uint64* stack
 );
 
 void thread_dispatch ();
@@ -40,6 +41,10 @@ int time_sleep (time_t);
 void putc (char ch);
 
 char getc ();
+
+void* slabMemAlloc(char const* name, size_t sizeOfData);
+
+void slabMemFree(char const* name, void* addr);
 
 
 #endif

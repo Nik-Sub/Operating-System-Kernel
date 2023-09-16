@@ -11,6 +11,8 @@
 
 class SCB{
 private:
+    static int pomId;
+    int brojac;
     // value of semaphore
     int value;
     List<TCB> blockedThreads;
@@ -19,7 +21,7 @@ private:
     // to change context from blocked to another thread
     void changeContext();
 
-    SCB(unsigned val): value(val){}
+    SCB(unsigned val): value(val){ brojac = pomId++;}
     void putThreadInBlocked();
     TCB* getThreadFromBlocked();
     int getValForJump();
@@ -34,6 +36,9 @@ public:
     int getValue(){
         return value;
     }
+
+    void* operator new (size_t s);
+    void operator delete (void* p);
 };
 
 

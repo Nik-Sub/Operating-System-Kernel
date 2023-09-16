@@ -16,11 +16,9 @@ public:
     friend class Thread;
     friend class PeriodicThread;
     friend class SCB;
+    friend class Scheduler;
 
-    ~TCB() {
-        //__putc('O');
-        delete stack;
-    }
+    ~TCB();
 
     bool isFinished() const { return finished; }
 
@@ -52,6 +50,9 @@ public:
         return context.valForJmp;
     }
 
+    void* operator new (size_t s);
+    void operator delete (void* p);
+
 
 private:
     // need wrapper because of type Body, so we need wraper for run()  !!
@@ -62,13 +63,16 @@ private:
             body(body),
             stack(stackk),
             context({(uint64) &threadWrapper,
-                     (uint64)stackk, (int)0, (int)0
+                     (uint64)stackk, (uint64)&threadWrapper, (uint64)&threadWrapper, (int)0, (int)0
                     }),
             finished(false)
     {
         this->arg = arg;
+        id = pomid++;
+        if (context.sp != 0 && context.sp % 16 != 0)
+            context.sp -= context.sp%16;
         // because we will make one with nullptr body on the start, so we dont put that thread twice
-        if (body != nullptr) {
+        if (body != nullptr && stackk != nullptr) {
             Scheduler::put(this);
 
         }
@@ -78,6 +82,8 @@ private:
     {
         uint64 ra;
         uint64 sp;
+        uint64 raCopy;
+        uint64 raCopy2;
         //we will need this value to not enter if in block() when we return second time there
         int valForJmp;
         // will be 1 if we closed semaphore while there were blocked threads
@@ -99,7 +105,7 @@ private:
     uint64 *stack;
     Context context;
     uint64 timeSlice = DEFAULT_TIME_SLICE;
-    bool finished;
+    bool finished = false;
     bool sleeping = false;
 
     static void threadWrapper();
@@ -117,6 +123,9 @@ private:
     // need this field because of output thread before userMain
     // that thread must working in supervisor mode
     uint64 firstSstatus;
+    bool firstTimeSubstitute= true;
+    int id;
+    static uint64 pomid;
 };
 
 

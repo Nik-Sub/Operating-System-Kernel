@@ -7,3 +7,4 @@ sem_t SystemConsole::extIntSemForOutput = nullptr;
 MyBuffer* SystemConsole::inputBuffer = nullptr;
 MyBuffer* SystemConsole::outputBuffer = nullptr;
 
+SystemConsole* SystemConsole::console = nullptr;

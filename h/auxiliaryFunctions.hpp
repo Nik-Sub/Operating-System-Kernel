@@ -6,6 +6,7 @@
 #define PROJECT_BASE_V1_1_AUXILIARYFUNCTIONS_HPP
 
 #include "../h/MemoryAllocator.h"
+#include "../h/SlabAllocator.h"
 //#include "../lib/console.h"
 #include "tcb.h"
 #include "scb.hpp"

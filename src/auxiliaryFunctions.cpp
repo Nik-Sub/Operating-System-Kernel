@@ -40,27 +40,50 @@ void Riscv::popSppSpie()
     __asm__ volatile("sret");
 }
 
-int globW = 0;
-int globS = 0;
+//int globW = 0;
+//int globS = 0;
 
 void Riscv::interruptRoutine(){
     // sstatusVar and codeOfFunc and result of first if will be saved in registars a3, a4, a5
     // i need a3 and a4 to be saved on stack (f.e. for thread_create)
-    __asm__ volatile ("addi sp, sp, -16");
+    __asm__ volatile ("addi sp, sp, -40");
     __asm__ volatile ("sd a3, 0x00(sp)");
     __asm__ volatile ("sd a4, 0x08(sp)");
+    __asm__ volatile ("sd a5, 0x10(sp)");
+    __asm__ volatile ("sd a0, 0x18(sp)");
+    __asm__ volatile ("sd a1, 0x20(sp)");
+
+
+    uint64 volatile a00;
+    __asm__ volatile ("mv %[var], a0" : [var] "=r" (a00));
+
+    uint64 volatile oldSEPC;
+    uint64 volatile oldSEPC2;
+    uint64 volatile oldSSTATUS;
+
     uint64 sstatusVar;
     __asm__ volatile ("csrr %[var], scause": [var]"=r" (sstatusVar));
+    if (sstatusVar == 2)
+        __asm__ volatile ("csrr %[var], scause": [var]"=r" (sstatusVar));
+    if (sstatusVar == 5)
+        __asm__ volatile ("csrr %[var], scause": [var]"=r" (sstatusVar));
+    if (sstatusVar == 7)
+        __asm__ volatile ("csrr %[var], scause": [var]"=r" (sstatusVar));
     if (sstatusVar == (0x08UL) || sstatusVar == (0x09UL) ) {
+        // restoring values before check with if above
+        __asm__ volatile ("ld a3, 0x00(sp)");
+        __asm__ volatile ("ld a4, 0x08(sp)");
+        __asm__ volatile ("ld a5, 0x10(sp)");
         // dohvatanje koda funkcije
         uint64 volatile codeOfFunc;
         __asm__ volatile ("mv %[code], a0" : [code] "=r" (codeOfFunc));
         // in some system calls we will have system calls too,
         // so we need to save current sepc and sstatus
-        uint64 volatile oldSEPC;
-        uint64 volatile oldSSTATUS;
+        //uint64 volatile oldSEPC;
+        //uint64 volatile oldSSTATUS;
         bool changeToUserMode = false;
         __asm__ volatile ("csrr %[var], sepc": [var]"=r"(oldSEPC));
+        __asm__ volatile ("csrr %[var], sepc": [var]"=r"(oldSEPC2));
         __asm__ volatile ("csrr %[var], sstatus": [var]"=r"(oldSSTATUS));
         switch (codeOfFunc) {
             // yield
@@ -70,7 +93,7 @@ void Riscv::interruptRoutine(){
                 // synchro context switch
                 TCB *oldRunning = TCB::running;
 
-                // we need one PCB to save ra and sp from the first time we got here
+                // we need one TCB to save ra and sp from the first time we got here
                 if (!oldRunning) {
                     oldRunning = new TCB(nullptr, nullptr, nullptr);
                 }
@@ -151,7 +174,8 @@ void Riscv::interruptRoutine(){
                 __asm__ volatile ("ld %[var], 0x08(sp)": [var]"=r" (stack_space));
 
                 *handle = TCB::createThread(body, arg, stack_space);
-                (*handle)->firstSstatus = oldSSTATUS;
+                if (*handle != nullptr)
+                    (*handle)->firstSstatus = oldSSTATUS;
                 break;
             }
             // thread_exit
@@ -177,7 +201,8 @@ void Riscv::interruptRoutine(){
             case 0x13: {
 
                 TCB::dispatch();
-
+                __asm__ volatile ("ld a0, 0x18(sp)");
+                __asm__ volatile ("ld a1, 0x20(sp)");
                 break;
             }
             // sem_open
@@ -220,12 +245,14 @@ void Riscv::interruptRoutine(){
                 __asm__ volatile ("mv %[var], a1": [var]"=r" (handle));
 
                 if (handle == nullptr){
-                    globW++;
+                    //globW++;
                 }
 
                 handle->value--;
                 if (handle->value < 0) {
                     handle->block();
+                    __asm__ volatile ("ld a0, 0x18(sp)");
+                    __asm__ volatile ("ld a1, 0x20(sp)");
                     /*
                     // we were changed sstatus reg so just use oldSEPC
                     // return values of sepc and sstatus
@@ -251,11 +278,12 @@ void Riscv::interruptRoutine(){
                 __asm__ volatile ("mv %[var], a1": [var]"=r"(handle));
                 if (handle == nullptr){
                     __asm__ volatile ("mv a0, %[var]": : [var]"r" (nullptr));
-                    globS++;
+                    //globS++;
                 }
-                handle->value++;
-                if (handle->value <= 0)
+                handle->value = handle->value + 1;
+                if (handle->value <= 0) {
                     handle->deblock();
+                }
 
                 //successfull
                 // passing any ptr
@@ -271,7 +299,8 @@ void Riscv::interruptRoutine(){
                     TCB::running->setSleeping(true);
                 }
 
-                TCB::dispatch();
+                //TCB::dispatch();
+                thread_dispatch();
 
                 //successfull
                 // passing any ptr
@@ -288,7 +317,7 @@ void Riscv::interruptRoutine(){
                     *charForPut = '\n';
                 SystemConsole::outputBuffer->put((int)(*charForPut));
                 if (SystemConsole::outputSem->getValue() <= 0){
-                    sem_signal(SystemConsole::outputSem);
+                    //sem_signal(SystemConsole::outputSem);
                 }
                 break;
             }
@@ -302,6 +331,30 @@ void Riscv::interruptRoutine(){
                 __asm__ volatile ("mv a0, %[var]": : [var]"r" (retVal));
                 break;
             }
+            // SlabAllocator - mem_alloc
+            case 0x50:{
+                //__putc('M');
+                char const* nameOfCache;
+                size_t sizeOfData;
+                __asm__ volatile ("mv %[var], a1": [var]"=r" (nameOfCache));
+                __asm__ volatile ("mv %[var], a2": [var]"=r" (sizeOfData));
+
+                void* addr = SlabAllocator::getInstance()->alloc(nameOfCache, sizeOfData);
+                __asm__ volatile ("mv a0, %[var]": : [var]"r" (addr));
+                break;
+
+            }
+            // SlabAllocator - mem_free
+            case 0x51:{
+                char const* nameOfCache;
+                void* addr;
+                __asm__ volatile ("mv %[var], a1": [var]"=r" (nameOfCache));
+                __asm__ volatile ("mv %[var], a2": [var]"=r" (addr));
+                SlabAllocator::getInstance()->free(nameOfCache, addr);
+
+                break;
+
+            }
             default:{
                 break;
             }
@@ -309,7 +362,10 @@ void Riscv::interruptRoutine(){
 
         }
         // return values of sepc and sstatus
-        __asm__ volatile ("csrw sepc, %[var]": :[var]"r" (oldSEPC));
+        if (oldSEPC != oldSEPC2)
+            __asm__ volatile ("csrw sepc, %[var]": :[var]"r" (oldSEPC2));
+        else
+            __asm__ volatile ("csrw sepc, %[var]": :[var]"r" (oldSEPC));
         if (!changeToUserMode)
             __asm__ volatile ("csrw sstatus, %[var]": :[var]"r" (oldSSTATUS));
 
@@ -326,8 +382,8 @@ void Riscv::interruptRoutine(){
     else if (sstatusVar == (0x01UL<<63 | 0x01)){
         // ako je tajmer, onda nisam usao sa ecall pa ne treba da se inkrementira sepc
         __asm__ volatile ("csrc sip, 0x02");
-        uint64 volatile oldSEPC;
-        uint64 volatile oldSSTATUS;
+        //uint64 volatile oldSEPC;
+        //uint64 volatile oldSSTATUS;
         __asm__ volatile ("csrr %[var], sepc": [var]"=r"(oldSEPC));
         __asm__ volatile ("csrr %[var], sstatus": [var]"=r"(oldSSTATUS));
 
@@ -364,12 +420,18 @@ void Riscv::interruptRoutine(){
                 TCB::timeSliceCounter++;
                 if (TCB::timeSliceCounter == TCB::running->getTimeSlice()) {
                     TCB::timeSliceCounter = 0;
-                    TCB::dispatch();
+                    //TCB::dispatch();
+                    thread_dispatch();
+                    //__asm__ volatile ("ld a0, 0x00(sp)");
                 }
             } else {
-                TCB::dispatch();
+                //TCB::dispatch();
+                thread_dispatch();
+                //__asm__ volatile ("ld a0, 0x00(sp)");
             }
         }
+        __asm__ volatile ("ld a0, 0x18(sp)");
+        __asm__ volatile ("ld a1, 0x20(sp)");
 
 
 
@@ -381,25 +443,31 @@ void Riscv::interruptRoutine(){
     }
         // external interrupts
     else if (sstatusVar == (0x01UL<<63 | 0x09)){
-        uint64 oldSEPC;
-        uint64 oldSSTATUS;
+        //uint64 volatile oldSEPC;
+        //uint64 volatile oldSSTATUS;
         __asm__ volatile ("csrr %[var], sepc": [var]"=r"(oldSEPC));
         __asm__ volatile ("csrr %[var], sstatus": [var]"=r"(oldSSTATUS));
 
-        uint64 maskForExtInt = 1<<9;
-        __asm__ volatile ("csrc sip, %[var]": : [var]"r" (maskForExtInt));
-        if (plic_claim() == 0x0a){
+
+        //uint64 maskForExtInt = 1<<9;
+        //__asm__ volatile ("csrc sip, %[var]": : [var]"r" (maskForExtInt));
+        if (plic_claim() == 0x0a) {
             plic_complete(10);
-            if(*((uint8*)CONSOLE_STATUS) & (1 << 5)) {
-                if (SystemConsole::extIntSemForOutput->getValue() <= 0) {
-                    sem_signal(SystemConsole::extIntSemForOutput);
-                }
-            }
-            while(*((uint8*)CONSOLE_STATUS) & 0x01){
+
+            //if (*((uint8 *) CONSOLE_STATUS) & (1 << 5)) {
+                //SystemConsole::getInstance()->funForOutputThread(nullptr);
+                //if (SystemConsole::extIntSemForOutput->getValue() <= 0) {
+                    //sem_signal(SystemConsole::extIntSemForOutput);
+                //}
+            //}
+            while (*((uint8 *) CONSOLE_STATUS) & 0x01) {
                 SystemConsole::inputBuffer->put(*((uint8 *) CONSOLE_RX_DATA));
             }
-        }
 
+
+        }
+        //returning a0 because it wont be returned with interrupt handler
+        __asm__ volatile ("ld a0, 0x18(sp)");
         // return values of sepc and sstatus
         __asm__ volatile ("csrw sepc, %[var]": :[var]"r" (oldSEPC));
         __asm__ volatile ("csrw sstatus, %[var]": :[var]"r" (oldSSTATUS));
@@ -411,7 +479,7 @@ void Riscv::interruptRoutine(){
     }
 
     // delee a3 and a4
-    __asm__ volatile ("addi sp, sp, 16");
+    __asm__ volatile ("addi sp, sp, 40");
     // let timer make interrupts
     //__asm__ volatile("li t1, 0x20");
     //__asm__ volatile("csrs sstatus, t1");

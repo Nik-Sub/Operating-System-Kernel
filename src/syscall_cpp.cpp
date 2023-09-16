@@ -3,15 +3,35 @@
 //
 
 #include "../h/syscall_cpp.h"
-//#include "../test/printing.hpp"
+#include "../h/printing.hpp"
 #include "../h/SystemConsole.h"
 void* operator new (size_t size){
-    return mem_alloc(size);
+    //__asm__ volatile ("addi sp, sp, -8");
+    //__asm__ volatile ("sd a5, 0x00(sp)");
+    void* ret = mem_alloc(size);
+    //__asm__ volatile ("ld a5, 0x00(sp)");
+    //__asm__ volatile ("addi sp, sp, 8");
+    //if ((uint64)ret < 0x0000000080000000)
+    //    __asm__ volatile ("mv a0, %[var]": : [var]"r" (ret));
+    __asm__ volatile ("mv a0, %[var]": : [var]"r" (ret));
+    return ret;
 }
+
+void *operator new[](size_t n)
+{
+    void* ret = mem_alloc(n);
+    __asm__ volatile ("mv a0, %[var]": : [var]"r" (ret));
+    return ret;
+}
+
 void operator delete (void* addr){
     mem_free(addr);
 }
 
+void operator delete[](void *p) noexcept
+{
+    mem_free(p);
+}
 
 /*
 void bla(void* a){}
@@ -29,12 +49,18 @@ int main() {
 
 
 Thread::Thread(void (*body)(void *), void *arg) {
+    myHandle = nullptr;
     //thread_t * ptrToHandle = &myHandle;
-    thread_create(&myHandle, body, arg);
+    stack = (uint64*)slabMemAlloc("CacheThreadStacks", DEFAULT_STACK_SIZE);
+    if (stack != nullptr) {
+        thread_create(&myHandle, body, arg, stack);
+    }
 }
 
 Thread::~Thread() {
-    delete myHandle;
+    if (myHandle != nullptr)
+        delete myHandle;
+    slabMemFree("CacheThreadStacks", stack);
 }
 
 void Thread::dispatch() {
@@ -43,13 +69,24 @@ void Thread::dispatch() {
 
 
 int Thread::start() {
-    thread_create(&myHandle, TCB::wrapperForRun,this);
-    return 0;
+    if (stack != nullptr)
+        thread_create(&myHandle, TCB::wrapperForRun,this, stack);
+    if (myHandle == nullptr) {
+        //printString("Postalo je\n");
+        //__asm__ volatile ("mv a0, %[var]": : [var]"r" (-1));
+        return -1;
+    }
+    else {
+        //__asm__ volatile ("mv a0, %[var]": : [var]"r" (0));
+        return 0;
+    }
 }
 
 
 Thread::Thread() {
     //thread_create(&myHandle, nullptr,nullptr);
+    myHandle = nullptr;
+    stack = (uint64*)slabMemAlloc("CacheThreadStacks", DEFAULT_STACK_SIZE);
 }
 
 int Thread::sleep(time_t time) {
@@ -66,17 +103,22 @@ Semaphore::~Semaphore() {
 }
 
 int Semaphore::wait() {
-    return sem_wait(myHandle);
+    int ret = sem_wait(myHandle);
+    __asm__ volatile ("mv a0, %[var]": : [var]"r" (ret));
+    return ret;
 }
 
 int Semaphore::signal() {
-    return sem_signal(myHandle);
+    int ret = sem_signal(myHandle);
+    __asm__ volatile ("mv a0, %[var]": : [var]"r" (ret));
+    return ret;
 }
 
 PeriodicThread::PeriodicThread (time_t period){
     // we will not need handle for PeriodicThread
     thread_t tempHandle = nullptr;
-    thread_create(&tempHandle, TCB::wrapperForPeriodicActivation, this);
+    uint64 * stack = (uint64*)slabMemAlloc("CacheThreadStacks", DEFAULT_STACK_SIZE);
+    thread_create(&tempHandle, TCB::wrapperForPeriodicActivation, this, stack);
     tempHandle->timeForPeriodicActivation = period;
     tempHandle->flagForPeriod = true;
 }

@@ -1,5 +1,9 @@
 #include "../h/MemoryAllocator.h"
 #include "../h/syscall_c.h"
+#include "../h/BuddyAllocator.h"
+#include "../h/SlabAllocator.h"
+#include "../h/printing.hpp"
+#include "../h/Slab.h"
 
 MemoryAllocator* MemoryAllocator::memAl = nullptr;
 FreeMemNode* MemoryAllocator::head = nullptr;
@@ -8,15 +12,46 @@ NotFreeMemNode* MemoryAllocator::notFreeHead = nullptr;
 
 MemoryAllocator *MemoryAllocator::getInstance() {
     if (!memAl) {
-        memAl = (MemoryAllocator *) HEAP_START_ADDR;
+
+        //size in blocks for BuddyAllocator
+        size_t sizeInBlocksBuddy = 0;
+        if (sizeof(BuddyAllocator))
+            sizeInBlocksBuddy = sizeof(BuddyAllocator) / BLOCK_SIZE + (sizeof(BuddyAllocator) % BLOCK_SIZE == 0? 0: 1);
+        //size in blocks for BuddyAllocator
+        size_t sizeInBlocksSlab = 0;
+        if (sizeof(SlabAllocator))
+            sizeInBlocksSlab = sizeof(SlabAllocator) / BLOCK_SIZE + (sizeof(SlabAllocator) % BLOCK_SIZE == 0? 0: 1);
+        //size in blocks for KernelMemory
+        size_t sizeOfKernelMemory =  ((size_t)((uint8 *)HEAP_END_ADDR - (uint8 *)HEAP_START_ADDR)/ 8);
+        size_t sizeOfKernelMemoryInBlocks = sizeOfKernelMemory / BLOCK_SIZE + (sizeOfKernelMemory % BLOCK_SIZE == 0? 0: 1);
+        // round on power of 2
+        size_t power = 1;
+        size_t degree = 0;
+        while (power * 2 <= sizeOfKernelMemoryInBlocks) {
+            degree++;
+            power *= 2;
+        }
+        if (power < sizeOfKernelMemoryInBlocks) {
+            degree++;
+            sizeOfKernelMemoryInBlocks = power * 2;
+        }
+        //sum of blocks for buddyA, arrayOfFreeBlocks, kernel memory, SlabA
+        size_t sumOfBlocks = sizeInBlocksBuddy + degree * sizeof(FreeMemBlockBuddy*) + sizeOfKernelMemoryInBlocks + sizeInBlocksSlab ;
+
+        void* newHeapStart =(uint8 *)HEAP_START_ADDR + sumOfBlocks * BLOCK_SIZE;
+        //if ((uint64 )newHeapStart % 16 != 0)
+        //    newHeapStart = (void*)((uint64 )newHeapStart - (uint64 )newHeapStart%16);
+
+
+        memAl = (MemoryAllocator *) newHeapStart;
         // size in blocks for memAl
         size_t sizeInBlocks = 0;
         if (sizeof(MemoryAllocator))
             sizeInBlocks = sizeof(MemoryAllocator) / MEM_BLOCK_SIZE + (sizeof(MemoryAllocator) % MEM_BLOCK_SIZE == 0? 0: 1);
-        head = (FreeMemNode *) ((char *) HEAP_START_ADDR + sizeInBlocks * MEM_BLOCK_SIZE );
+        head = (FreeMemNode *) ((uint8 *) newHeapStart + sizeInBlocks * MEM_BLOCK_SIZE );
         head->next = nullptr;
         head->prev = nullptr;
-        head->size = (size_t )(((char*)HEAP_END_ADDR - (char*)head)/ MEM_BLOCK_SIZE + (((char*)HEAP_END_ADDR - (char*)head)% MEM_BLOCK_SIZE == 0? 0: 1));
+        head->size = 100000;//(size_t )(((uint8*)HEAP_END_ADDR - (uint8*)head)/ MEM_BLOCK_SIZE + (((uint8*)HEAP_END_ADDR - (uint8*)head)% MEM_BLOCK_SIZE == 0? 0: 1));
     }
     return memAl;
 }
@@ -110,8 +145,9 @@ void *MemoryAllocator::memAlloc(size_t size) {
         prev = cur;
         cur = cur->next;
     }
-    if (ret == nullptr)
-        head = nullptr;
+    if (ret == nullptr) {
+        //head = nullptr;
+    }
     return ret;
 }
 

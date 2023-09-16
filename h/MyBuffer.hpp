@@ -7,6 +7,7 @@
 
 
 #include "../h/syscall_c.h"
+#include "../h/SlabAllocator.h"
 //#include "../test/printing.hpp"
 
 class MyBuffer {
@@ -32,6 +33,8 @@ public:
 
     int getCnt();
 
+    void* operator new (size_t s);
+    void operator delete (void* p);
 };
 
 

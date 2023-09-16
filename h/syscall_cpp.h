@@ -11,6 +11,8 @@
 
 void* operator new (size_t);
 void operator delete (void*);
+void *operator new[](size_t n);
+void operator delete[](void *p) noexcept;
 
 
 class Thread {
@@ -27,6 +29,7 @@ protected:
 private:
     friend class TCB;
     thread_t myHandle;
+    uint64* stack;
 };
 
 
